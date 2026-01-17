@@ -57,9 +57,9 @@ function areas:getAreasAtPos(pos)
 		for id, area in pairs(self.areas) do
 			local ap1, ap2 = area.pos1, area.pos2
 			if
-					(px >= ap1.x and px <= ap2.x) and
-					(py >= ap1.y and py <= ap2.y) and
-					(pz >= ap1.z and pz <= ap2.z) then
+				(px >= ap1.x and px <= ap2.x) and
+				(py >= ap1.y and py <= ap2.y) and
+				(pz >= ap1.z and pz <= ap2.z) then
 				res[id] = area
 			end
 		end
@@ -72,7 +72,7 @@ function areas:getAreasIntersectingArea(pos1, pos2)
 	local res = {}
 	if self.store then
 		local a = self.store:get_areas_in_area(pos1, pos2,
-				true, false, true)
+			true, false, true)
 		for store_id, store_area in pairs(a) do
 			local id = tonumber(store_area.data)
 			res[id] = self.areas[id]
@@ -84,9 +84,9 @@ function areas:getAreasIntersectingArea(pos1, pos2)
 		for id, area in pairs(self.areas) do
 			local ap1, ap2 = area.pos1, area.pos2
 			if
-					(ap1.x <= p2x and ap2.x >= p1x) and
-					(ap1.y <= p2y and ap2.y >= p1y) and
-					(ap1.z <= p2z and ap2.z >= p1z) then
+				(ap1.x <= p2x and ap2.x >= p1x) and
+				(ap1.y <= p2y and ap2.y >= p1y) and
+				(ap1.z <= p2z and ap2.z >= p1z) then
 				-- Found an intersecting area.
 				res[id] = area
 			end
@@ -95,54 +95,37 @@ function areas:getAreasIntersectingArea(pos1, pos2)
 	return res
 end
 
--- Returns smallest area at position and its id or nil.
--- If multiple areas have the same volume, larger id takes precedence.
-function areas:getSmallestAreaAtPos(pos)
-	local smallest_area, smallest_id, volume
-	local smallest_volume = math.huge
-	for id, area in pairs(self:getAreasAtPos(pos)) do
-		volume = (area.pos2.x - area.pos1.x + 1)
-				* (area.pos2.y - area.pos1.y + 1)
-				* (area.pos2.z - area.pos1.z + 1)
-		if smallest_volume >= volume then
-			smallest_area = area
-			smallest_id = id
-			smallest_volume = volume
+local priv_cache = {}
+core.register_globalstep(function()
+	priv_cache = {}
+end)
+-- Checks if the area is unprotected or owned by you
+function areas:canInteract(pos, name)
+	if priv_cache[name] == true then
+		return true
+	elseif priv_cache[name] == nil then
+		priv_cache[name] = minetest.check_player_privs(name, self.adminPrivs)
+		if priv_cache[name] then
+			return true
 		end
 	end
-	return smallest_area, smallest_id
-end
 
--- Checks if the area is unprotected, open, owned by player
--- or player is part of faction of [smallest] area at position.
-function areas:canInteract(pos, name)
-	if minetest.check_player_privs(name, self.adminPrivs) then
-		return true
-	end
-	local areas_list
-	if areas.config.use_smallest_area_precedence then
-		local smallest_area, _ = self:getSmallestAreaAtPos(pos)
-		areas_list = { smallest_area }
-	else
-		areas_list = self:getAreasAtPos(pos)
-	end
 	local owned = false
-	for _, area in pairs(areas_list) do
-		-- Player owns the area or area is open
+	for _, area in pairs(self:getAreasAtPos(pos)) do
 		if area.owner == name or area.open then
 			return true
 		elseif areas.factions_available and area.faction_open then
 			if (factions.version or 0) < 2 then
 				local faction_name = factions.get_player_faction(name)
 				if faction_name then
-					for _, fname in ipairs(area.faction_open) do
+					for _, fname in ipairs(area.faction_open or {}) do
 						if faction_name == fname then
 							return true
 						end
 					end
 				end
 			else
-				for _, fname in ipairs(area.faction_open) do
+				for _, fname in ipairs(area.faction_open or {}) do
 					if factions.player_is_in_faction(fname, name) then
 						return true
 					end
@@ -186,7 +169,7 @@ function areas:canInteractInArea(pos1, pos2, name, allow_open)
 		-- A little optimization: isAreaOwner isn't necessary
 		-- here since we're iterating over all relevant areas.
 		if area.owner == name and
-				self:isSubarea(pos1, pos2, id) then
+			self:isSubarea(pos1, pos2, id) then
 			return true
 		end
 
@@ -198,8 +181,8 @@ function areas:canInteractInArea(pos1, pos2, name, allow_open)
 		-- Note: We can't return directly here, because there might be
 		-- an exclosing owned area that we haven't gotten to yet.
 		if not blocking_area and
-				(not allow_open or not area.open) and
-				(not name or not self:isAreaOwner(id, name)) then
+			(not allow_open or not area.open) and
+			(not name or not self:isAreaOwner(id, name)) then
 			blocking_area = id
 		end
 	end

@@ -43,23 +43,26 @@ minetest.register_globalstep(function(dtime)
 			end
 
 			table.insert(areaStrings, ("%s [%u] (%s%s%s)")
-					:format(area.name, id, area.owner,
+				:format(area.name, id, area.owner,
 					area.open and S(":open") or "",
-					faction_info and ": "..faction_info or ""))
+					faction_info and ": " .. faction_info or ""))
 		end
 
 		for i, area in pairs(areas:getExternalHudEntries(pos)) do
 			local str = ""
 			if area.name then str = area.name .. " " end
-			if area.id then str = str.."["..area.id.."] " end
-			if area.owner then str = str.."("..area.owner..")" end
+			if area.id then str = str .. "[" .. area.id .. "] " end
+			if area.owner then str = str .. "(" .. area.owner .. ")" end
 			table.insert(areaStrings, str)
 		end
 
 		local areaString = S("Areas:")
 		if #areaStrings > 0 then
-			areaString = areaString.."\n"..
+			areaString = areaString .. "\n" ..
 				table.concat(areaStrings, "\n")
+		end
+		if #areaStrings == 0 or sbz_api.disabled_areas_hud[name] then
+			areaString = ""
 		end
 		local hud = areas.hud[name]
 		if not hud then
@@ -69,11 +72,11 @@ minetest.register_globalstep(function(dtime)
 				[minetest.features.hud_def_type_field and "type" or "hud_elem_type"] = "text", -- compatible with older versions
 				name = "Areas",
 				number = 0xFFFFFF,
-				position = {x=0, y=1},
-				offset = {x=8, y=-8},
+				position = { x = 0, y = 1 },
+				offset = { x = 8, y = -8 },
 				text = areaString,
-				scale = {x=200, y=60},
-				alignment = {x=1, y=-1},
+				scale = { x = 200, y = 60 },
+				alignment = { x = 1, y = -1 },
 			})
 			hud.oldAreas = areaString
 			return

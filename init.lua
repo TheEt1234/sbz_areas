@@ -6,23 +6,19 @@ areas = {}
 
 areas.factions_available = minetest.get_modpath("playerfactions") and true
 
-areas.adminPrivs = {areas=true}
-local startTime = os.clock()
+areas.adminPrivs = { areas = true }
+areas.startTime = os.clock()
 
 areas.modpath = minetest.get_modpath("areas")
-dofile(areas.modpath.."/settings.lua")
-dofile(areas.modpath.."/api.lua")
-
-local async_dofile = core.register_async_dofile or dofile
-async_dofile(areas.modpath.."/async.lua")
-
-dofile(areas.modpath.."/internal.lua")
-dofile(areas.modpath.."/chatcommands.lua")
-dofile(areas.modpath.."/pos.lua")
-dofile(areas.modpath.."/interact.lua")
-dofile(areas.modpath.."/legacy.lua")
-dofile(areas.modpath.."/hud.lua")
-
+dofile(areas.modpath .. "/settings.lua")
+dofile(areas.modpath .. "/api.lua")
+dofile(areas.modpath .. "/internal.lua")
+dofile(areas.modpath .. "/chatcommands.lua")
+dofile(areas.modpath .. "/pos.lua")
+dofile(areas.modpath .. "/interact.lua")
+dofile(areas.modpath .. "/legacy.lua")
+dofile(areas.modpath .. "/hud.lua")
+dofile(areas.modpath .. "/pvp.lua")
 areas:load()
 
 local S = minetest.get_translator("areas")
@@ -43,6 +39,6 @@ if not minetest.registered_privileges[areas.config.self_protection_privilege] th
 end
 
 if minetest.settings:get_bool("log_mods") then
-	local diffTime = os.clock() - startTime
-	minetest.log("action", "areas loaded in "..diffTime.."s.")
+	local diffTime = os.clock() - areas.startTime
+	minetest.log("action", "areas loaded in " .. diffTime .. "s.")
 end

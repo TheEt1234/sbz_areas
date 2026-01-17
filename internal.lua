@@ -4,38 +4,26 @@ function areas:player_exists(name)
 	return minetest.get_auth_handler().get_auth(name) ~= nil
 end
 
--- When saving is done in an async thread, the function will not be present in this global namespace.
-if not areas._internal_do_save then
-	local saving_requested = false
-	local saving_locked = false
-
-	-- Required cuz we are referring to _G.areas._internal_do_save *inside*
-	-- async env (it does not exist in the main thread)
-	local function async_func(...)
-		return areas._internal_do_save(...)
-	end
-
-	local function done_callback()
-		saving_locked = false
-		if saving_requested == true then
-			saving_requested = false
-			return areas:save()
+local safe_file_write = minetest.safe_file_write
+if safe_file_write == nil then
+	function safe_file_write(path, content)
+		local file, err = io.open(path, "w")
+		if err then
+			return err
 		end
+		file:write(content)
+		file:close()
 	end
+end
 
-	function areas:save()
-		if saving_locked == true then
-			saving_requested = true
-		else
-			saving_locked = true
-			return core.handle_async(async_func, done_callback, self.areas, self.config.filename)
-		end
+-- Save the areas table to a file
+function areas:save()
+	local datastr = minetest.write_json(self.areas)
+	if not datastr then
+		minetest.log("error", "[areas] Failed to serialize area data!")
+		return
 	end
-else
-	-- Save the areas table to a file
-	function areas:save()
-		return areas._internal_do_save(self.areas, self.config.filename)
-	end
+	return safe_file_write(self.config.filename, datastr)
 end
 
 -- Load the areas table from the save file
@@ -60,8 +48,6 @@ function areas:load()
 	end
 	file:close()
 	self:populateStore()
-
-	areas:_checkHierarchy()
 end
 
 --- Checks an AreaStore ID.
@@ -71,7 +57,7 @@ end
 function areas:checkAreaStoreId(sid)
 	if not sid then
 		minetest.log("error", "AreaStore failed to find an ID for an "
-			.."area! Falling back to iterative area checking.")
+			.. "area! Falling back to iterative area checking.")
 		self.store = nil
 		self.store_ids = nil
 	end
@@ -97,28 +83,29 @@ function areas:populateStore()
 	self.store_ids = store_ids
 end
 
--- Guarentees returning an unused index in areas.areas
-local index_cache = 0
-local function findFirstUnusedIndex()
-	local t = areas.areas
-	repeat index_cache = index_cache + 1
-	until t[index_cache] == nil
-	return index_cache
+-- Finds the first usable index in a table
+-- Eg: {[1]=false,[4]=true} -> 2
+local function findFirstUnusedIndex(t)
+	local i = 0
+	repeat
+		i = i + 1
+	until t[i] == nil
+	return i
 end
 
---- Add an area.
+--- Add a area.
 -- @return The new area's ID.
 function areas:add(owner, name, pos1, pos2, parent)
-	local id = findFirstUnusedIndex()
+	local id = findFirstUnusedIndex(self.areas)
 	self.areas[id] = {
 		name = name,
 		pos1 = pos1,
 		pos2 = pos2,
 		owner = owner,
-		parent = parent
+		parent = parent,
 	}
 
-	for i=1, #areas.registered_on_adds do
+	for i = 1, #areas.registered_on_adds do
 		areas.registered_on_adds[i](id, self.areas[id])
 	end
 
@@ -132,8 +119,8 @@ function areas:add(owner, name, pos1, pos2, parent)
 	return id
 end
 
---- Remove an area, and optionally its children recursively.
--- If an area is deleted non-recursively the children will
+--- Remove a area, and optionally its children recursively.
+-- If a area is deleted non-recursively the children will
 -- have the removed area's parent as their new parent.
 function areas:remove(id, recurse)
 	if recurse then
@@ -153,7 +140,7 @@ function areas:remove(id, recurse)
 		end
 	end
 
-	for i=1, #areas.registered_on_removes do
+	for i = 1, #areas.registered_on_removes do
 		areas.registered_on_removes[i](id)
 	end
 
@@ -172,7 +159,7 @@ function areas:move(id, area, pos1, pos2)
 	area.pos1 = pos1
 	area.pos2 = pos2
 
-	for i=1, #areas.registered_on_moves do
+	for i = 1, #areas.registered_on_moves do
 		areas.registered_on_moves[i](id, area, pos1, pos2)
 	end
 
@@ -185,7 +172,7 @@ function areas:move(id, area, pos1, pos2)
 	end
 end
 
--- Checks if an area between two points is entirely contained by another area.
+-- Checks if a area between two points is entirely contained by another area.
 -- Positions must be sorted.
 function areas:isSubarea(pos1, pos2, id)
 	local area = self.areas[id]
@@ -198,18 +185,17 @@ function areas:isSubarea(pos1, pos2, id)
 	local p1x, p1y, p1z = pos1.x, pos1.y, pos1.z
 	local p2x, p2y, p2z = pos2.x, pos2.y, pos2.z
 	if
-			(p1x >= ap1x and p1x <= ap2x) and
-			(p2x >= ap1x and p2x <= ap2x) and
-			(p1y >= ap1y and p1y <= ap2y) and
-			(p2y >= ap1y and p2y <= ap2y) and
-			(p1z >= ap1z and p1z <= ap2z) and
-			(p2z >= ap1z and p2z <= ap2z) then
+		(p1x >= ap1x and p1x <= ap2x) and
+		(p2x >= ap1x and p2x <= ap2x) and
+		(p1y >= ap1y and p1y <= ap2y) and
+		(p2y >= ap1y and p2y <= ap2y) and
+		(p1z >= ap1z and p1z <= ap2z) and
+		(p2z >= ap1z and p2z <= ap2z) then
 		return true
 	end
 end
 
 -- Returns a table (list) of children of an area given its identifier
--- This is not recursive, meaning that only children and not grand-children are returned.
 function areas:getChildren(id)
 	local children = {}
 	for cid, area in pairs(self.areas) do
@@ -226,7 +212,7 @@ end
 function areas:canPlayerAddArea(pos1, pos2, name)
 	local allowed = true
 	local errMsg
-	for i=1, #areas.registered_protection_conditions do
+	for i = 1, #areas.registered_protection_conditions do
 		local res, msg = areas.registered_protection_conditions[i](pos1, pos2, name)
 		if res == true then
 			-- always allow to protect, no matter of other conditions
@@ -239,8 +225,8 @@ function areas:canPlayerAddArea(pos1, pos2, name)
 		elseif res ~= nil then
 			local origin = areas.callback_origins[areas.registered_protection_conditions[i]]
 			error("\n[Mod] areas: Invalid api usage from mod '" ..
-					origin.mod .. "' in callback registerProtectionCondition() at " ..
-					origin.source .. ":" .. origin.line)
+				origin.mod .. "' in callback registerProtectionCondition() at " ..
+				origin.source .. ":" .. origin.line)
 		end
 	end
 
@@ -257,9 +243,9 @@ areas:registerProtectionCondition(function(pos1, pos2, name)
 
 	-- Check self protection privilege
 	if not areas.config.self_protection or
-			not privs[areas.config.self_protection_privilege] then
+		not privs[areas.config.self_protection_privilege] then
 		return false, S("Self protection is disabled or you do not have"
-				.." the necessary privilege.")
+			.. " the necessary privilege.")
 	end
 end)
 
@@ -267,12 +253,12 @@ end)
 areas:registerProtectionCondition(function(pos1, pos2, name)
 	local privs = minetest.get_player_privs(name)
 	local max_size = privs.areas_high_limit and
-			areas.config.self_protection_max_size_high or
-			areas.config.self_protection_max_size
+		areas.config.self_protection_max_size_high or
+		areas.config.self_protection_max_size
 	if
-			(pos2.x - pos1.x + 1) > max_size.x or
-			(pos2.y - pos1.y + 1) > max_size.y or
-			(pos2.z - pos1.z + 1) > max_size.z then
+		(pos2.x - pos1.x + 1) > max_size.x or
+		(pos2.y - pos1.y + 1) > max_size.y or
+		(pos2.z - pos1.z + 1) > max_size.z then
 		return false, S("Area is too big.")
 	end
 end)
@@ -287,11 +273,11 @@ areas:registerProtectionCondition(function(pos1, pos2, name)
 		end
 	end
 	local max_areas = privs.areas_high_limit and
-			areas.config.self_protection_max_areas_high or
-			areas.config.self_protection_max_areas
+		areas.config.self_protection_max_areas_high or
+		areas.config.self_protection_max_areas
 	if count >= max_areas then
 		return false, S("You have reached the maximum amount of"
-				.." areas that you are allowed to protect.")
+			.. " areas that you are allowed to protect.")
 	end
 end)
 
@@ -301,11 +287,11 @@ areas:registerProtectionCondition(function(pos1, pos2, name)
 	if not can then
 		local area = areas.areas[id]
 		return false, S("The area intersects with @1 [@2] (@3).",
-				area.name, id, area.owner)
+			area.name, id, area.owner)
 	end
 end)
 
--- Given an id returns a string in the format:
+-- Given a id returns a string in the format:
 -- "name [id]: owner (x1, y1, z1) (x2, y2, z2) -> children"
 function areas:toString(id)
 	local area = self.areas[id]
@@ -316,7 +302,7 @@ function areas:toString(id)
 
 	local children = areas:getChildren(id)
 	if #children > 0 then
-		message = message.." -> "..table.concat(children, ", ")
+		message = message .. " -> " .. table.concat(children, ", ")
 	end
 	return message
 end
@@ -345,70 +331,14 @@ function areas:isAreaOwner(id, name)
 	if cur and minetest.check_player_privs(name, self.adminPrivs) then
 		return true
 	end
-	local seen = {}
-	while cur and not seen[cur] do
+	while cur do
 		if cur.owner == name then
 			return true
 		elseif cur.parent then
-			-- Prevent lock-ups
-			seen[cur] = true
 			cur = self.areas[cur.parent]
 		else
 			return false
 		end
 	end
 	return false
-end
-
-local function get_parent_chain_if_recursive(area, completed)
-	-- Get uppermost parent
-	local affected = {}
-	while area do
-		if affected[area] then
-			-- List of affected areas
-			return affected
-		end
-		if completed[area] then
-			-- Already checked by another function call --> all OK
-			return nil
-		end
-		affected[area] = true
-		completed[area] = true
-
-		area = areas.areas[area.parent]
-	end
-	return nil -- all OK
-end
-
---- Internal function to ensure there are no circular parent/children occurrences
-function areas:_checkHierarchy()
-	local needs_save = false
-	local completed = {}
-	for _, area_1 in pairs(self.areas) do
-		local chain = get_parent_chain_if_recursive(area_1, completed)
-		if chain then
-			-- How can it be fixed if there is a longer chain?
-			local list = {}
-			for area, _ in pairs(chain) do
-				list[#list + 1] = area.parent
-			end
-
-			local instruction
-			if #list == 1 then
-				-- Trivial case, can be resolved in-place
-				instruction = "The issue was corrected automatically."
-				area_1.parent = nil
-				needs_save = true
-			else
-				instruction = "Please resolve this conflict manually. Expect issues."
-			end
-
-			core.log("error", "[areas] LOGIC ERROR! Detected a circular area hierarchy in the "
-				.. "following area ID(s): " .. table.concat(list, ", ") .. ". " .. instruction)
-		end
-	end
-	if needs_save then
-		-- Prevent repetitive spam upon startup
-		self:save()
-	end
 end
